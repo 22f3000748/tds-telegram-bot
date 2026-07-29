@@ -20,17 +20,14 @@ def home():
 
 @app.get("/logs")
 def logs():
-    if not LOG_FILE.exists():
-        return {
-            "exists": False,
-            "path": str(LOG_FILE)
-        }
+    p = Path(__file__).parent / "run.jsonl"
 
-    return FileResponse(
-        path=str(LOG_FILE),
-        filename="run.jsonl",
-        media_type="application/json"
-    )
+    return {
+        "exists": p.exists(),
+        "path": str(p),
+        "cwd": os.getcwd(),
+        "files": os.listdir(Path(__file__).parent),
+    }
 
 
 @app.on_event("startup")
