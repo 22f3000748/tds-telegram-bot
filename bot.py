@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -16,19 +17,43 @@ from telegram.ext import (
     filters,
 )
 
+# ----------------------------
+# Environment
+# ----------------------------
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
 LOG_URL = os.getenv("LOG_URL", "")
 
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN is missing")
+
+if not AIPIPE_TOKEN:
+    raise ValueError("AIPIPE_TOKEN is missing")
+
+# ----------------------------
+# Logging
+# ----------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
+    format="%(asctime)s %(levelname)s %(message)s",
 )
 
-LOG_FILE = "run.jsonl"
+LOG_FILE = Path(__file__).parent / "run.jsonl"
+LOG_FILE.touch(exist_ok=True)
 
+
+def log_event(event: dict):
+    event["timestamp"] = time.time()
+
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+# ----------------------------
+# AI Client
+# ----------------------------
 client = OpenAI(
     base_url="https://aipipe.org/openai/v1",
     api_key=AIPIPE_TOKEN,
@@ -43,12 +68,9 @@ SYSTEM_PROMPT = (
 )
 
 
-def log_event(event):
-    event["timestamp"] = time.time()
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
-
-
+# ----------------------------
+# Commands
+# ----------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hello 👋\n"
@@ -57,6 +79,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ----------------------------
+# AI
+# ----------------------------
 def ask_ai(messages):
     response = client.chat.completions.create(
         model="gpt-5-mini",
@@ -65,6 +90,9 @@ def ask_ai(messages):
     return response.choices[0].message.content.strip()
 
 
+# ----------------------------
+# Message Handler
+# ----------------------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user.full_name
@@ -72,12 +100,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
 
-    log_event({
-        "direction": "incoming",
-        "chat_id": chat_id,
-        "user": user,
-        "text": text
-    })
+    log_event(
+        {
+            "direction": "incoming",
+            "chat_id": chat_id,
+            "user": user,
+            "text": text,
+        }
+    )
 
     history = conversation_history[chat_id]
     history.append({"role": "user", "content": text})
@@ -87,6 +117,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         reply = ask_ai(messages)
 
+        # Add log_url if AI returns JSON
         try:
             obj = json.loads(reply)
             if isinstance(obj, dict):
@@ -97,39 +128,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         history.append({"role": "assistant", "content": reply})
 
-        log_event({
-            "direction": "outgoing",
-            "chat_id": chat_id,
-            "user": user,
-            "text": reply
-        })
+        log_event(
+            {
+                "direction": "outgoing",
+                "chat_id": chat_id,
+                "user": user,
+                "text": reply,
+            }
+        )
 
         await update.message.reply_text(reply)
 
     except Exception as e:
-        err = f"Error: {e}"
+        err = str(e)
 
-        log_event({
-            "direction": "error",
-            "chat_id": chat_id,
-            "user": user,
-            "text": err
-        })
+        log_event(
+            {
+                "direction": "error",
+                "chat_id": chat_id,
+                "user": user,
+                "text": err,
+            }
+        )
 
         await update.message.reply_text(
-            "Sorry, something went wrong.\n\n" + err
+            f"Sorry, something went wrong.\n\n{err}"
         )
 
 
+# ----------------------------
+# Build Telegram App
+# ----------------------------
 def build_application():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             handle_message,
         )
     )
 
-    return app
+    return application
