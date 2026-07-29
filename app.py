@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-import os
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
@@ -9,7 +9,6 @@ from bot import build_application, log_event
 app = FastAPI()
 
 telegram_app = None
-
 LOG_FILE = Path(__file__).parent / "run.jsonl"
 
 
@@ -20,14 +19,17 @@ def home():
 
 @app.get("/logs")
 def logs():
-    p = Path(__file__).parent / "run.jsonl"
+    if not LOG_FILE.exists():
+        return {
+            "exists": False,
+            "path": str(LOG_FILE)
+        }
 
-    return {
-        "exists": p.exists(),
-        "path": str(p),
-        "cwd": os.getcwd(),
-        "files": os.listdir(Path(__file__).parent),
-    }
+    return FileResponse(
+        path=str(LOG_FILE),
+        filename="run.jsonl",
+        media_type="application/json",
+    )
 
 
 @app.on_event("startup")
