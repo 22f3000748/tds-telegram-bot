@@ -11,6 +11,10 @@ AIPIPE_TOKEN=xxxxxxxx
 LOG_URL=https://your-public-url/run.jsonl
 """
 
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+import threading
+import uvicorn
 import json
 import logging
 import asyncio
@@ -158,12 +162,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------------------
 # Main
 # ----------------------------
-import asyncio
+
+api = FastAPI()
+
+@api.get("/")
+def home():
+    return {"status": "Bot is running"}
+
+@api.get("/logs")
+def logs():
+    return FileResponse("run.jsonl")
+
+
+def run_api():
+    uvicorn.run(
+        api,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000))
+    )
+
+
+
 
 def main():
-    # Create an event loop explicitly (needed for Python 3.14)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    threading.Thread(target=run_api, daemon=True).start()
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -178,5 +200,5 @@ def main():
     print("Bot is running...")
     app.run_polling()
 
-if __name__ == "__main__":
+    if __name__ == "__main__":
     main()
