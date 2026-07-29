@@ -13,6 +13,7 @@ LOG_URL=https://your-public-url/run.jsonl
 
 import json
 import logging
+import asyncio
 import os
 import time
 from collections import defaultdict
@@ -157,7 +158,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------------------
 # Main
 # ----------------------------
+import asyncio
+
 def main():
+    # Create an event loop explicitly (needed for Python 3.14)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
