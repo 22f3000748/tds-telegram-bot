@@ -61,11 +61,46 @@ client = OpenAI(
 
 conversation_history = defaultdict(list)
 
-SYSTEM_PROMPT = (
-    "You are a careful data analyst. "
-    "Return ONLY valid JSON when the user explicitly requests JSON. "
-    "Otherwise answer normally."
-)
+SYSTEM_PROMPT = """
+You are an expert data analyst.
+
+Solve the user's task.
+
+The user may specify the required JSON format.
+
+Return ONLY the content that belongs inside the top-level "answer" field.
+
+Examples:
+
+Expected final response:
+{
+  "answer": 42,
+  "log_url": "..."
+}
+
+You return:
+42
+
+Expected final response:
+{
+  "answer": {
+    "state": "Assam"
+  },
+  "log_url": "..."
+}
+
+You return:
+{
+  "state": "Assam"
+}
+
+Never include:
+- log_url
+- an outer "answer" object
+- markdown
+- explanations
+- code fences
+"""
 
 
 # ----------------------------
@@ -117,14 +152,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         reply = ask_ai(messages)
 
-        # Add log_url if AI returns JSON
-        try:
-            obj = json.loads(reply)
-            if isinstance(obj, dict):
-                obj["log_url"] = LOG_URL
-                reply = json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
+        answer = json.loads(reply)
+
+        final_reply = {
+            "answer": answer,
+            "log_url": LOG_URL
+        }
+
+        reply = json.dumps(final_reply, ensure_ascii=False)
 
         history.append({"role": "assistant", "content": reply})
 
@@ -152,7 +187,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"Sorry, something went wrong.\n\n{err}"
+            json.dumps(
+                {
+                    "answer": None,
+                    "log_url": LOG_URL,
+                    "error": err
+                }
+            )
         )
 
 
